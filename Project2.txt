@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: UNLICENSED
+
+pragma solidity ^0.8.0;
+
+contract LunchVenue{
+    struct status {
+        uint time; //how many 30 minutes. Assume status is recorded every 30 minutes. Start from 0 and end at 47.
+        bytes32 id;
+        bytes32 location;
+        bytes32 temperature;
+        bytes32 device;
+        bytes32 certificates;
+    }
+
+    mapping(uint => mapping (uint => status)) public formulaInformation ; // List of status of baby formulas (formula id, time, status)
+    uint public numFormula = 0;
+    address public owner; // Owner of baby formula
+    bool agree = false; // supplier agreement
+
+    // Creates a new lunch venue contract
+    constructor () {
+        owner = msg.sender; // Set contract creator as owner
+    }
+
+    /// @notice Add a new baby formula
+    /// @param id, location, temperature, device, certificates of the formula
+    /// @return Number of formula added so far
+    function addBabyFormula(uint id, string memory location, uint temperature, string memory device, string memory certificates) public restricted returns (uint){
+        numFormula++;
+        status memory initial_status;
+        initial_status.time = 0;
+        initial_status.id = keccak256(abi.encodePacked(id));
+        initial_status.location = keccak256(abi.encodePacked(location));
+        initial_status.temperature = keccak256(abi.encodePacked(temperature));
+        initial_status.device = keccak256(abi.encodePacked(device));
+        initial_status.certificates = keccak256(abi.encodePacked(certificates));
+        formulaInformation[numFormula][0] = initial_status;
+        return numFormula;
+    }
+
+    /// @notice update a baby formula
+    /// @return found Is the correponding baby formula found?
+    function updateFormula(uint id, string memory location, uint temperature, string memory device, string memory certificates) public restricted returns (bool){
+        uint i = 0;
+        uint j = 0;
+        bool found = false;
+        while (i <= numFormula) {
+            if (formulaInformation[i][0].id == keccak256(abi.encodePacked(id))) {
+                while (formulaInformation[i][j].id != 0) { // keep proceeding status until correct time
+                    j++;
+                }
+                if (j <= 47) { //When the time is not up
+                    formulaInformation[i][j].time = j;
+                    formulaInformation[i][j].id = keccak256(abi.encodePacked(id));
+                    formulaInformation[i][j].location = keccak256(abi.encodePacked(location));
+                    formulaInformation[i][j].temperature = keccak256(abi.encodePacked(temperature));
+                    formulaInformation[i][j].device = keccak256(abi.encodePacked(device));
+                    formulaInformation[i][j].certificates = keccak256(abi.encodePacked(certificates));
+                    found = true;
+                }
+            }
+            i++;
+        }
+        return found;
+    }
+
+    /// @notice Only owner can do
+    modifier restricted() {
+        require (msg.sender == owner, "Can only be executed by the manager");
+        _;
+    }
+}

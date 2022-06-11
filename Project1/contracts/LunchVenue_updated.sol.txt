@@ -1,0 +1,172 @@
+// SPDX-License-Identifier: UNLICENSED
+
+pragma solidity ^0.8.0;
+
+/// @title Contract to agree on the lunch venue
+contract LunchVenue{
+
+    struct Friend {
+        string name;
+        bool voted;
+    }
+
+    struct Vote {
+        address voterAddress;
+        uint venue;
+    }
+
+    mapping (uint => string) public venues ; // List of venues ( venue no , name )
+    mapping (address => Friend) public friends ; // List of friends ( address , Friend )
+    uint public numVenues = 0;
+    uint public numFriends = 0;
+    uint public numVotes = 0;
+    address public manager; // Manager of lunch venues
+    string public votedVenue = ""; // Where to have lunch
+
+    mapping (uint => Vote) private votes; // List of votes ( vote no , Vote )
+    mapping (uint => uint) private results; // List of vote counts ( venue no , no of votes )
+    ///-------------------------Weakness 2: voting is closed at first-----------------------------------
+    bool voteOpen = false;
+    ///-------------------------------------------------------------------------------------------------
+
+    // Creates a new lunch venue contract
+    constructor () {
+        manager = msg.sender; // Set contract creator as manager
+    }
+
+    /// @notice Add a new lunch venue
+    /// @dev To simplify the code duplication of venues is not checked
+    /// @param name Name of the venue
+    /// @return Number of lunch venues added so far
+    function addVenue(string memory name) public restricted votingClose normal beforeLunchtime returns (uint){
+        numVenues++;
+        venues[numVenues] = name;
+        return numVenues;
+    }
+
+    /// @notice Add a new friend who can vote on lunch venue
+    /// @dev To simplify the code duplication of friends is not checked
+    /// @param friendAddress Friend ’s account address
+    /// @param name Friend ’s name
+    /// @return Number of friends added so far
+    function addFriend(address friendAddress, string memory name) public restricted votingClose normal beforeLunchtime returns (uint){
+        Friend memory f;
+        f.name = name;
+        f.voted = false;
+        friends[friendAddress] = f;
+        numFriends++;
+        return numFriends;
+    }
+    
+    ///-----------------------Weakness 2: only can do voting when voting start--------------------------
+    function startVoting() public restricted returns (bool){
+        voteOpen = true;
+        return voteOpen;
+    }
+    ///-------------------------------------------------------------------------------------------------
+    
+    ///---------------------------Weakness 4: process can be stopped------------------------------------
+    bool stop = false;
+    function stopVoting() public restricted returns (bool){
+        stop = true;
+        return stop;
+    }
+    function resumeVoting() public restricted returns (bool){
+        stop = false;
+        if (stop == false) {
+            return true;
+        }
+        return false;
+    }
+    ///-------------------------------------------------------------------------------------------------
+
+    /// @notice Vote for a lunch venue
+    /// @dev To simplify the code multiple votes by a friend is not checked
+    /// @param venue Venue number being voted
+    /// @return validVote Is the vote valid ? A valid vote should be from a registered friend and to a registered venue
+    function doVote(uint venue) public votingOpen normal beforeLunchtime returns (bool validVote){
+        validVote = false; // Is the vote valid?
+        if (bytes(friends[msg.sender].name).length != 0) { // Does friend exist ?
+            if (bytes(venues[venue]).length != 0) { // Does venue exist ?
+                ///------------------ Weakness 1: A friend cannot vote more than once.------------------
+                if (friends[msg.sender].voted != true) { 
+                ///-------------------------------------------------------------------------------------
+                    validVote = true;
+                    friends[msg.sender].voted = true;
+                    Vote memory v;
+                    v.voterAddress = msg.sender;
+                    v.venue = venue;
+                    numVotes++;
+                    votes[numVotes] = v;
+                }
+            }
+        }
+
+        if (numVotes >= numFriends/2 + 1) { // Quorum is met
+            finalResult();
+        }
+        return validVote;
+    }
+
+    /// @notice Determine winner venue
+    /// @dev If top 2 venues have the same no of votes , final result depends on vote order
+    function finalResult() private{
+        uint highestVotes = 0;
+        uint highestVenue = 0;
+
+        for (uint i = 1; i <= numVotes ; i++) { // For each vote
+            uint voteCount = 1;
+            if(results[votes[i].venue] > 0) { // Already start counting
+                voteCount += results[votes[i].venue];
+            }
+            results[votes[i].venue] = voteCount ;
+
+            if (voteCount > highestVotes){ // New winner
+                highestVotes = voteCount;
+                highestVenue = votes[i].venue;
+            }
+        }
+        votedVenue = venues[highestVenue]; // Chosen lunch venue
+        voteOpen = false; // Voting is now closed
+    }
+
+    /// @notice Only manager can do
+    modifier restricted() {
+        require (msg.sender == manager, "Can only be executed by the manager");
+        _;
+    }
+
+    /// @notice Only whenb voting is still open
+    modifier votingOpen () {
+        require(voteOpen == true , "Can vote only while voting is open.") ;
+        _;
+    }
+    
+    ///-------------------------------------Weakness 3: no timeout------------------------------------
+    /// @notice Only valid before lunchtime
+    uint timeout;
+    function setTimeout(uint blocknum) public restricted returns (bool){
+        timeout = blocknum + block.number;
+        return true;
+    }
+    
+    modifier beforeLunchtime() {
+        require(block.number <= timeout, 'Time is out');
+        _;
+    }
+    ///-----------------------------------------------------------------------------------------------
+    
+    ///-------------Weakness 2: can only add friends and venue when voting is closed------------------
+    modifier votingClose () {
+        require(voteOpen == false, "Vote is open");
+        _;
+    }
+    ///-----------------------------------------------------------------------------------------------
+    
+    ///-----------------------Weakness 4: voting can be stopped by manager----------------------------
+    modifier normal () {
+        require(stop == false, "Process has been stopped");
+        _;
+    }
+    ///-----------------------------------------------------------------------------------------------
+}
